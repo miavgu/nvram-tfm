@@ -1,0 +1,1 @@
+/home/miavgu/nvmain-tfm/gem5/NVmain/traceWriter/DRAMPower2Trace/DRAMPower2TraceWriter.cpp
