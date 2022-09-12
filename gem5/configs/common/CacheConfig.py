@@ -42,7 +42,9 @@
 
 import m5
 from m5.objects import *
+from m5.SimObject import *
 from common.Caches import *
+from common.FSConfig import *
 from common import ObjectList
 
 def _get_hwp(hwp_option):
@@ -114,16 +116,99 @@ def config_cache(options, system):
     if options.l2cache and options.elastic_trace_en:
         fatal("When elastic trace is enabled, do not configure L2 caches.")
 
-    if options.l2cache:
+    if options.l2cache and options.HMCcache:
+
+        if not options.TAGCache:
+            system.l2 = l2_cache_class(clk_domain=system.cpu_clk_domain,
+                                    size=options.l2_size,
+                                    assoc=options.l2_assoc,
+                                    can_write=options.cache_trace)
+            system.l3 = HMCCache(clk_domain=system.cpu_clk_domain,
+                                            size=options.HMC_size,
+                                            assoc=options.HMC_assoc,
+                                            can_write=options.cache_trace)
+
+            system.tol2bus = L2XBar(clk_domain = system.cpu_clk_domain)
+            system.tol3bus = L2XBar(clk_domain = system.cpu_clk_domain)
+
+            system.l2.cpu_side = system.tol2bus.master
+            system.l2.mem_side = system.tol3bus.slave
+
+            system.l3.cpu_side = system.tol3bus.master
+            system.l3.mem_side = system.membus.slave
+        else:
+            system.l2 = l2_cache_class(clk_domain=system.cpu_clk_domain,
+                                    size=options.l2_size,
+                                    assoc=options.l2_assoc)
+            system.l3 = HMCCache(clk_domain=system.cpu_clk_domain,
+                                            size=options.HMC_size,
+                                            assoc=options.HMC_assoc)
+            system.memobj = DRAMTag()
+
+            system.tol2bus = L2XBar(clk_domain = system.cpu_clk_domain)
+            system.tol3bus = L2XBar(clk_domain = system.cpu_clk_domain)
+            system.totagbus = L2XBar(clk_domain = system.cpu_clk_domain)
+
+            system.l2.cpu_side = system.tol2bus.master
+            system.l2.mem_side = system.tol3bus.slave
+
+            system.l3.cpu_side = system.tol3bus.master
+            system.l3.mem_side = system.totagbus.slave
+
+            system.memobj.cpu_side = system.totagbus.master
+            system.memobj.mem_side = system.membus.slave
+    elif options.l2cache and options.HMCSectorcache:
+        if not options.TAGCache:
+            system.l2 = l2_cache_class(clk_domain=system.cpu_clk_domain,
+                                    size=options.l2_size,
+                                    assoc=options.l2_assoc)
+            system.l3 = HMCSectorCache(clk_domain=system.cpu_clk_domain,
+                                            size=options.HMCSector_size,
+                                            assoc=options.HMCSector_assoc,
+                                            # sectorSize=options.HMCSectorsector_size,
+                                            tags=SectorTags(num_blocks_per_sector=options.HMCSectorBPS))
+
+            system.tol2bus = L2XBar(clk_domain = system.cpu_clk_domain)
+            system.tol3bus = L2XBar(clk_domain = system.cpu_clk_domain)
+
+            system.l2.cpu_side = system.tol2bus.master
+            system.l2.mem_side = system.tol3bus.slave
+
+            system.l3.cpu_side = system.tol3bus.master
+            system.l3.mem_side = system.membus.slave
+        else:
+            system.l2 = l2_cache_class(clk_domain=system.cpu_clk_domain,
+                                    size=options.l2_size,
+                                    assoc=options.l2_assoc)
+            system.l3 = HMCSectorCache(clk_domain=system.cpu_clk_domain,
+                                            size=options.HMCSector_size,
+                                            assoc=options.HMCSector_assoc,
+                                            sectorSize=options.HMCSectorsector_size,
+                                            tags=SectorTags(num_blocks_per_sector=options.HMCSectorBPS))
+            system.memobj = DRAMTag()
+
+            system.tol2bus = L2XBar(clk_domain = system.cpu_clk_domain)
+            system.tol3bus = L2XBar(clk_domain = system.cpu_clk_domain)
+            system.totagbus = L2XBar(clk_domain = system.cpu_clk_domain)
+
+            system.l2.cpu_side = system.tol2bus.master
+            system.l2.mem_side = system.tol3bus.slave
+
+            system.l3.cpu_side = system.tol3bus.master
+            system.l3.mem_side = system.totagbus.slave
+
+            system.memobj.cpu_side = system.totagbus.master
+            system.memobj.mem_side = system.membus.slave
+    elif options.l2cache:
         # Provide a clock for the L2 and the L1-to-L2 bus here as they
         # are not connected using addTwoLevelCacheHierarchy. Use the
         # same clock as the CPUs.
-        system.l2 = l2_cache_class(clk_domain=system.cpu_clk_domain,
-                                   **_get_cache_opts('l2', options))
+            system.l2 = l2_cache_class(clk_domain=system.cpu_clk_domain,
+                                    **_get_cache_opts('l2', options))
 
-        system.tol2bus = L2XBar(clk_domain = system.cpu_clk_domain)
-        system.l2.cpu_side = system.tol2bus.master
-        system.l2.mem_side = system.membus.slave
+            system.tol2bus = L2XBar(clk_domain = system.cpu_clk_domain)
+            system.l2.cpu_side = system.tol2bus.master
+            system.l2.mem_side = system.membus.slave
 
     if options.memchecker:
         system.memchecker = MemChecker()
@@ -186,12 +271,18 @@ def config_cache(options, system):
                         ExternalCache("cpu%d.dcache" % i))
 
         system.cpu[i].createInterruptController()
-        if options.l2cache:
-            system.cpu[i].connectAllPorts(system.tol2bus, system.membus)
-        elif options.external_memory_system:
-            system.cpu[i].connectUncachedPorts(system.membus)
+        
+        if options.OnlyTAGCache:
+            system.cpu[i].connectAllPorts(system.totagcache,system.membus)
         else:
-            system.cpu[i].connectAllPorts(system.membus)
+            if options.l2cache and options.TAGCache:
+                system.cpu[i].connectAllPorts(system.tol2bus, system.membus)
+            elif options.l2cache:
+                system.cpu[i].connectAllPorts(system.tol2bus, system.membus)
+            elif options.external_memory_system:
+                system.cpu[i].connectUncachedPorts(system.membus)
+            else:
+                system.cpu[i].connectAllPorts(system.membus)
 
     return system
 

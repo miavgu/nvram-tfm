@@ -33,7 +33,7 @@
 *                     Website: http://www.cse.psu.edu/~tzz106 )
 *******************************************************************************/
 
-#include "Banks/DDR3Bank/DDR3Bank.h"
+#include "Banks/PCMBank/PCMBank.h"
 #include "src/MemoryController.h"
 #include "src/EventQueue.h"
 
@@ -45,7 +45,7 @@
 
 using namespace NVM;
 
-DDR3Bank::DDR3Bank( )
+PCMBank::PCMBank( )
 {
     nextActivate = 0;
     nextPrecharge = 0;
@@ -108,14 +108,24 @@ DDR3Bank::DDR3Bank( )
     averageEndurance = 0;
     worstCaseEndurance = 0;
 
+    tRead2Read_diff_addr = 0;
+    tRead2Write_diff_addr = 0;
+    tWrite2Read_diff_addr = 0;
+    tWrite2Write_diff_addr = 0;
+
+    tRead2Read_same_addr = 0;
+    tRead2Write_same_addr = 0;
+    tWrite2Read_same_addr = 0;
+    tWrite2Write_same_addr = 0;
+    
     bankId = -1;
 }
 
-DDR3Bank::~DDR3Bank( )
+PCMBank::~PCMBank( )
 {
 }
 
-void DDR3Bank::SetConfig( Config *config, bool createChildren )
+void PCMBank::SetConfig( Config *config, bool createChildren )
 {
     /* customize MAT size */
     if( config->KeyExists( "MATWidth" ) )
@@ -127,6 +137,16 @@ void DDR3Bank::SetConfig( Config *config, bool createChildren )
 
     MATHeight = p->MATHeight;
     subArrayNum = p->ROWS / MATHeight;
+
+    tRead2Read_diff_addr   = p->tRead2Read_diff_addr;
+    tRead2Write_diff_addr  = p->tRead2Write_diff_addr;
+    tWrite2Read_diff_addr  = p->tWrite2Read_diff_addr;
+    tWrite2Write_diff_addr = p->tWrite2Write_diff_addr;
+
+    tRead2Read_same_addr   = p->tRead2Read_same_addr;
+    tRead2Write_same_addr  = p->tRead2Write_same_addr;
+    tWrite2Read_same_addr  = p->tWrite2Read_same_addr;
+    tWrite2Write_same_addr = p->tWrite2Write_same_addr;
 
     if( createChildren )
     {
@@ -164,7 +184,7 @@ void DDR3Bank::SetConfig( Config *config, bool createChildren )
         state = DDR3BANK_PDPF;
 }
 
-void DDR3Bank::RegisterStats( )
+void PCMBank::RegisterStats( )
 {
     if( p->EnergyModel == "current" )
     {
@@ -214,7 +234,7 @@ void DDR3Bank::RegisterStats( )
 /*
  * PowerDown() power the bank down along with different modes
  */
-bool DDR3Bank::PowerDown( NVMainRequest *request )
+bool PCMBank::PowerDown( NVMainRequest *request )
 {
     bool returnValue = false;
 
@@ -264,7 +284,7 @@ bool DDR3Bank::PowerDown( NVMainRequest *request )
  * PowerUp() force bank to leave powerdown mode and return to either
  * DDR3BANK_CLOSE or DDR3BANK_OPEN 
  */
-bool DDR3Bank::PowerUp( NVMainRequest * /*request*/ )
+bool PCMBank::PowerUp( NVMainRequest * /*request*/ )
 {
     bool returnValue = false;
 
@@ -311,7 +331,7 @@ bool DDR3Bank::PowerUp( NVMainRequest * /*request*/ )
 /*
  * Activate() open a row 
  */
-bool DDR3Bank::Activate( NVMainRequest *request )
+bool PCMBank::Activate( NVMainRequest *request )
 {
     /* TODO: Can we remove this sanity check and totally trust IsIssuable()? */
     /* sanity check */
@@ -367,7 +387,7 @@ bool DDR3Bank::Activate( NVMainRequest *request )
 /*
  * Read() fulfills the column read function
  */
-bool DDR3Bank::Read( NVMainRequest *request )
+bool PCMBank::Read( NVMainRequest *request )
 {
     /* TODO: Can we remove this sanity check and totally trust IsIssuable()? */
     /* sanity check */
@@ -445,13 +465,19 @@ bool DDR3Bank::Read( NVMainRequest *request )
             << "read the subarray " << readSubArray << std::endl;
     }
 
+    lastRD = GetEventQueue()->GetCurrentCycle();
+    lastRDWRAddr.SetPhysicalAddress(request->address.GetPhysicalAddress());
+
+    if(success)
+        lastReqType = request->type;
+
     return success;
 }
 
 /*
  * Write() fulfills the column write function
  */
-bool DDR3Bank::Write( NVMainRequest *request )
+bool PCMBank::Write( NVMainRequest *request )
 {
     /* TODO: Can we remove this sanity check and totally trust IsIssuable()? */
     /* sanity check */
@@ -534,13 +560,19 @@ bool DDR3Bank::Write( NVMainRequest *request )
             << "write the subarray " << writeSubArray << std::endl;
     }
 
+    lastWR = GetEventQueue()->GetCurrentCycle();
+    lastRDWRAddr.SetPhysicalAddress(request->address.GetPhysicalAddress());
+
+    if(success)
+        lastReqType = request->type;
+
     return success;
 }
 
 /*
  * Precharge() close a row and force the bank back to DDR3BANK_CLOSED
  */
-bool DDR3Bank::Precharge( NVMainRequest *request )
+bool PCMBank::Precharge( NVMainRequest *request )
 {
     /* TODO: Can we remove this sanity check and totally trust IsIssuable()? */
     /* sanity check */
@@ -654,7 +686,7 @@ bool DDR3Bank::Precharge( NVMainRequest *request )
 /* 
  * Refresh() is simply treated as a Activate()
  */
-bool DDR3Bank::Refresh( NVMainRequest *request )
+bool PCMBank::Refresh( NVMainRequest *request )
 {
     /* TODO: Can we remove this sanity check and totally trust IsIssuable()? */
     /* sanity check */
@@ -696,7 +728,7 @@ bool DDR3Bank::Refresh( NVMainRequest *request )
     return true;
 }
 
-ncycle_t DDR3Bank::NextIssuable( NVMainRequest *request )
+ncycle_t PCMBank::NextIssuable( NVMainRequest *request )
 {
     ncycle_t nextCompare = 0;
 
@@ -711,7 +743,7 @@ ncycle_t DDR3Bank::NextIssuable( NVMainRequest *request )
 /*
  * IsIssuable() tells whether one request satisfies the timing constraints
  */
-bool DDR3Bank::IsIssuable( NVMainRequest *req, FailReason *reason )
+bool PCMBank::IsIssuable( NVMainRequest *req, FailReason *reason )
 {
     bool rv = true;
 
@@ -742,31 +774,186 @@ bool DDR3Bank::IsIssuable( NVMainRequest *req, FailReason *reason )
     }
     else if( req->type == READ || req->type == READ_PRECHARGE )
     {
-        if( nextRead > (GetEventQueue()->GetCurrentCycle()) 
-            || state != DDR3BANK_OPEN  )
+        if ( lastRDWRAddr.GetPhysicalAddress() != req->address.GetPhysicalAddress() )
         {
-            rv = false;
-            if( reason ) 
-                reason->reason = BANK_TIMING;
+            if ( lastReqType == READ || lastReqType == READ_PRECHARGE ) /* last Req was READ */
+            {
+                if (lastRD + tRead2Read_diff_addr > GetEventQueue( )->GetCurrentCycle( ))
+                {
+                    rv = false;
+
+                    if( reason ) 
+                        reason->reason = RANK_TIMING;
+                }
+                else
+                {
+                    rv = GetChild( req )->IsIssuable( req, reason );
+                }
+            }
+            else 
+            {
+                if ( lastReqType == WRITE || lastReqType == WRITE_PRECHARGE ) /* last Req was WRITE */
+                {
+                    if ( lastWR + tWrite2Read_diff_addr > GetEventQueue( )->GetCurrentCycle( ) )
+                    {
+                        rv = false;
+
+                        if( reason ) 
+                            reason->reason = RANK_TIMING;
+
+                    }
+                    else
+                    {
+                        rv = GetChild( req )->IsIssuable( req, reason );
+                    }
+                }
+            }
         }
         else
         {
-            rv = GetChild( req )->IsIssuable( req, reason );
+            if ( lastReqType == READ || lastReqType == READ_PRECHARGE ) /* last Req was READ */
+            {
+                if (lastRD + tRead2Read_same_addr > GetEventQueue( )->GetCurrentCycle( ))
+                {
+                    rv = false;
+
+                    if( reason ) 
+                        reason->reason = RANK_TIMING;
+                }
+                else
+                {
+                    rv = GetChild( req )->IsIssuable( req, reason );
+                }
+            }
+            else 
+            {
+                if ( lastReqType == WRITE || lastReqType == WRITE_PRECHARGE ) /* last Req was WRITE */
+                {
+                    if ( lastWR + tWrite2Read_same_addr > GetEventQueue( )->GetCurrentCycle( ) )
+                    {
+                        rv = false;
+
+                        if( reason ) 
+                            reason->reason = RANK_TIMING;
+
+                    }
+                    else
+                    {
+                        rv = GetChild( req )->IsIssuable( req, reason );
+                    }
+                }
+            }
+
+            // if( nextRead > (GetEventQueue()->GetCurrentCycle()) 
+            //     || state != DDR3BANK_OPEN  )
+            // {
+            //     rv = false;
+            //     if( reason ) 
+            //         reason->reason = BANK_TIMING;
+            // }
+            // else
+            // {
+            //     rv = GetChild( req )->IsIssuable( req, reason );
+            // }
         }
     }
     else if( req->type == WRITE || req->type == WRITE_PRECHARGE )
     {
-        if( nextWrite > (GetEventQueue()->GetCurrentCycle()) 
-            || state != DDR3BANK_OPEN )
+        if ( lastRDWRAddr.GetPhysicalAddress() != req->address.GetPhysicalAddress() )
         {
-            rv = false;
-            if( reason ) 
-                reason->reason = BANK_TIMING;
+            if ( lastReqType == READ || lastReqType == READ_PRECHARGE ) /* last Req was READ */
+            {
+                if (lastRD + tRead2Write_diff_addr > GetEventQueue( )->GetCurrentCycle( ))
+                {
+                    rv = false;
+
+                    if( reason ) 
+                        reason->reason = RANK_TIMING;
+                }
+                else
+                {
+                    rv = GetChild( req )->IsIssuable( req, reason );
+                }
+            }
+            else 
+            {
+                if ( lastReqType == WRITE || lastReqType == WRITE_PRECHARGE ) /* last Req was WRITE */
+                {
+                    if ( lastWR + tWrite2Write_diff_addr > GetEventQueue( )->GetCurrentCycle( ) )
+                    {
+                        rv = false;
+
+                        if( reason ) 
+                            reason->reason = RANK_TIMING;
+
+                    }
+                    else
+                    {
+                        rv = GetChild( req )->IsIssuable( req, reason );
+                    }
+                }
+            }
         }
         else
         {
-            rv = GetChild( req )->IsIssuable( req, reason );
+            if ( lastReqType == READ || lastReqType == READ_PRECHARGE ) /* last Req was READ */
+            {
+                if (lastRD + tRead2Write_same_addr > GetEventQueue( )->GetCurrentCycle( ))
+                {
+                    rv = false;
+
+                    if( reason ) 
+                        reason->reason = RANK_TIMING;
+                }
+                else
+                {
+                    rv = GetChild( req )->IsIssuable( req, reason );
+                }
+            }
+            else 
+            {
+                if ( lastReqType == WRITE || lastReqType == WRITE_PRECHARGE ) /* last Req was WRITE */
+                {
+                    if ( lastWR + tWrite2Write_same_addr > GetEventQueue( )->GetCurrentCycle( ) )
+                    {
+                        rv = false;
+
+                        if( reason ) 
+                            reason->reason = RANK_TIMING;
+
+                    }
+                    else
+                    {
+                        rv = GetChild( req )->IsIssuable( req, reason );
+                    }
+                }
+            }
+
+            // if( nextRead > (GetEventQueue()->GetCurrentCycle()) 
+            //     || state != DDR3BANK_OPEN  )
+            // {
+            //     rv = false;
+            //     if( reason ) 
+            //         reason->reason = BANK_TIMING;
+            // }
+            // else
+            // {
+            //     rv = GetChild( req )->IsIssuable( req, reason );
+            // }
         }
+
+        
+        // if( nextWrite > (GetEventQueue()->GetCurrentCycle()) 
+        //     || state != DDR3BANK_OPEN )
+        // {
+        //     rv = false;
+        //     if( reason ) 
+        //         reason->reason = BANK_TIMING;
+        // }
+        // else
+        // {
+        //     rv = GetChild( req )->IsIssuable( req, reason );
+        // }
     }
     else if( req->type == PRECHARGE || req->type == PRECHARGE_ALL )
     {
@@ -866,7 +1053,7 @@ bool DDR3Bank::IsIssuable( NVMainRequest *req, FailReason *reason )
 /*
  * IssueCommand() issue the command so that bank status will be updated
  */
-bool DDR3Bank::IssueCommand( NVMainRequest *req )
+bool PCMBank::IssueCommand( NVMainRequest *req )
 {
     bool rv = false;
 
@@ -922,12 +1109,41 @@ bool DDR3Bank::IssueCommand( NVMainRequest *req )
     return rv;
 }
 
-DDR3BankState DDR3Bank::GetState( ) 
+bool PCMBank::RequestComplete( NVMainRequest* req )
+{
+    bool rv = false;
+
+    /*
+     *  By default, just tell the issuing controller the request has been completed
+     *  as soon as it arrives on the interconnect.
+     */
+    if( req->owner == this )
+    {
+        delete req;
+        rv = true;
+    }
+    else
+    {
+        /*
+         *  If you get a segfault here, check to make sure your request has an
+         *  owner that is set!
+         *
+         *  In GDB: print request->owner
+         *
+         *  Should not be 0x0!
+         */
+        rv = GetParent( )->RequestComplete( req );
+    }
+
+    return rv;
+}
+
+DDR3BankState PCMBank::GetState( ) 
 {
     return state;
 }
 
-void DDR3Bank::CalculatePower( )
+void PCMBank::CalculatePower( )
 {
     ncycle_t simulationTime = GetEventQueue()->GetCurrentCycle();
 
@@ -956,14 +1172,14 @@ void DDR3Bank::CalculatePower( )
     }
 }
 
-double DDR3Bank::GetPower( )
+double PCMBank::GetPower( )
 {
     CalculatePower( );
 
     return bankPower;
 }
 
-void DDR3Bank::SetName( std::string )
+void PCMBank::SetName( std::string )
 {
 }
 
@@ -972,23 +1188,23 @@ void DDR3Bank::SetName( std::string )
  * if this bank logically spans multiple devices, the id corresponds to the device, 
  * NOT the logical bank id within a single device.
  */
-void DDR3Bank::SetId( ncounter_t id )
+void PCMBank::SetId( ncounter_t id )
 {
     bankId = id;
 }
 
-std::string DDR3Bank::GetName( )
+std::string PCMBank::GetName( )
 {
     return "";
 }
 
 
-ncounter_t DDR3Bank::GetId( )
+ncounter_t PCMBank::GetId( )
 {
     return bankId;
 }
 
-void DDR3Bank::CalculateStats( )
+void PCMBank::CalculateStats( )
 {
     NVMObject::CalculateStats( );
 
@@ -1039,7 +1255,7 @@ void DDR3Bank::CalculateStats( )
 }
 
 
-bool DDR3Bank::Idle( )
+bool PCMBank::Idle( )
 {
     bool bankIdle = true;
 
@@ -1054,7 +1270,7 @@ bool DDR3Bank::Idle( )
     return bankIdle;
 }
 
-void DDR3Bank::Cycle( ncycle_t steps )
+void PCMBank::Cycle( ncycle_t steps )
 {
     /* Count cycle numbers for each state */
     /* Number of fast exit prechage standbys */

@@ -85,11 +85,12 @@ def _listPlatformTypes(option, opt, value, parser):
 # being used, and consequently no CPUs, but rather various types of
 # testers and traffic generators.
 def addNoISAOptions(parser):
+    # Check for extra nvmain configuration override options
     for arg in sys.argv:
         if arg[:9] == "--nvmain-":
             parser.add_option(arg, type="string", default="NULL",
-                help="Set NVMain configuration value for a parameter")
-    
+                       help="Set NVMain configuration value for a parameter")
+
     parser.add_option("-n", "--num-cpus", type="int", default=1)
     parser.add_option("--sys-voltage", action="store", type="string",
                       default='1.0V',
@@ -129,6 +130,8 @@ def addNoISAOptions(parser):
                       help="use external port for SystemC TLM cosimulation")
     parser.add_option("--caches", action="store_true")
     parser.add_option("--l2cache", action="store_true")
+    parser.add_option("--HMCcache", action="store_true")
+    parser.add_option("--HMCSectorcache", action="store_true")
     parser.add_option("--num-dirs", type="int", default=1)
     parser.add_option("--num-l2caches", type="int", default=1)
     parser.add_option("--num-l3caches", type="int", default=1)
@@ -136,12 +139,26 @@ def addNoISAOptions(parser):
     parser.add_option("--l1i_size", type="string", default="32kB")
     parser.add_option("--l2_size", type="string", default="2MB")
     parser.add_option("--l3_size", type="string", default="16MB")
+    parser.add_option("--HMC_size", type="string", default="8MB")
+    parser.add_option("--HMCSector_size", type="string", default="8MB")
     parser.add_option("--l1d_assoc", type="int", default=2)
     parser.add_option("--l1i_assoc", type="int", default=2)
     parser.add_option("--l2_assoc", type="int", default=8)
     parser.add_option("--l3_assoc", type="int", default=16)
+    parser.add_option("--HMC_assoc", type="int", default=32)
+    parser.add_option("--HMCSector_assoc", type="int", default=32)
     parser.add_option("--cacheline_size", type="int", default=64)
+    parser.add_option("--HMCcacheline_size", type="int", default=64)
+    parser.add_option("--HMCSectorcacheline_size", type="int", default=64)
+    parser.add_option("--HMCSectorsector_size", type="int", default=256)
+    parser.add_option("--HMCSectorBPS", type="int", default=4)
+    
+    parser.add_option("--cache_trace", action="store_true")
+    parser.add_option("--cache_target", type="string", default="system.l3")
+    parser.add_option("--OnlyTAGCache", action="store_true")
 
+    # TODO Add TAGCache config parameters
+    parser.add_option("--TAGCache", action="store_true")
     # Enable Ruby
     parser.add_option("--ruby", action="store_true")
 

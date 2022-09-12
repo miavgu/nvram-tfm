@@ -45,6 +45,7 @@
 #include <cassert>
 #include <iostream>
 #include <limits>
+#include <math.h>
 
 /*
  * Using -O3 in gcc causes the popcount methods to return incorrect values.
@@ -80,6 +81,7 @@ SubArray::SubArray( )
     
     dataCycles = 0;
     worstCaseWrite = 0;
+    decdelay = 0;
 
     subArrayEnergy = 0.0f;
     activeEnergy = 0.0f;
@@ -154,6 +156,7 @@ void SubArray::SetConfig( Config *c, bool createChildren )
     params->SetParams( c );
     SetParams( params );
 
+    decdelay = p->decdelay;
     MATHeight = p->MATHeight;
     /* customize MAT size */
     if( conf->KeyExists( "MATWidth" ) )
@@ -198,6 +201,14 @@ void SubArray::SetConfig( Config *c, bool createChildren )
             dataEncoder->SetConfig( conf, createChildren );
             dataEncoder->SetStats( GetStats( ) );
         }
+    }
+
+    cycle_ns = 1/(static_cast<double>(conf->GetValue("CLK")) / 1000);
+    useTagCache = p->useTagCache;
+    if(useTagCache)
+    {
+        dramTagLatency = ceil(4/cycle_ns);
+        std::cout << statName << " using tag cache with each with a latency of " << dramTagLatency << " cycles." << std::endl;
     }
 }
 
@@ -389,14 +400,15 @@ bool SubArray::Read( NVMainRequest *request )
     }
 
     /* Any additional latency for data encoding. */
-    ncycles_t decLat = (dataEncoder ? dataEncoder->Read( request ) : 0);
+    //ncycles_t decLat = (dataEncoder ? dataEncoder->Read( request ) : 0);
+    ncycles_t decLat = decdelay;
 
     /* Update timing constraints */
     if( request->type == READ_PRECHARGE )
     {
         nextActivate = MAX( nextActivate, 
                             GetEventQueue()->GetCurrentCycle()
-                                + MAX( p->tBURST, p->tCCD ) * (request->burstCount - 1)
+                                + MAX( p->tBURST, p->tCCD_L ) * (request->burstCount - 1)
                                 + p->tAL + p->tRTP + p->tRP + decLat );
 
         nextPrecharge = MAX( nextPrecharge, nextActivate );
@@ -410,29 +422,29 @@ bool SubArray::Read( NVMainRequest *request )
         /* insert the event to issue the implicit precharge */ 
         GetEventQueue( )->InsertEvent( EventResponse, this, preReq, 
                         GetEventQueue()->GetCurrentCycle() + p->tAL + p->tRTP + decLat
-                        + MAX( p->tBURST, p->tCCD ) * (request->burstCount - 1) );
+                        + MAX( p->tBURST, p->tCCD_L ) * (request->burstCount - 1) );
     }
     else
     {
         nextPrecharge = MAX( nextPrecharge, 
                              GetEventQueue()->GetCurrentCycle() 
-                                 + MAX( p->tBURST, p->tCCD ) * (request->burstCount - 1)
-                                 + p->tAL + p->tBURST + p->tRTP - p->tCCD + decLat );
+                                 + MAX( p->tBURST, p->tCCD_L ) * (request->burstCount - 1)
+                                 + p->tAL + p->tBURST + p->tRTP - p->tCCD_L + decLat );
 
         nextRead = MAX( nextRead, 
                         GetEventQueue()->GetCurrentCycle() 
-                            + MAX( p->tBURST, p->tCCD ) * request->burstCount );
+                            + MAX( p->tBURST, p->tCCD_L ) * request->burstCount );
 
         nextWrite = MAX( nextWrite, 
                          GetEventQueue()->GetCurrentCycle() 
-                             + MAX( p->tBURST, p->tCCD ) * (request->burstCount  - 1)
+                             + MAX( p->tBURST, p->tCCD_L ) * (request->burstCount  - 1)
                              + p->tCAS + p->tBURST + p->tRTRS - p->tCWD + decLat );
     }
 
     /* Read->Powerdown is typical the same for READ and READ_PRECHARGE. */
     nextPowerDown = MAX( nextPowerDown,
                          GetEventQueue()->GetCurrentCycle()
-                            + MAX( p->tBURST, p->tCCD ) * (request->burstCount  - 1)
+                            + MAX( p->tBURST, p->tCCD_L ) * (request->burstCount  - 1)
                             + p->tCAS + p->tAL + p->tBURST + 1 + decLat );
 
     /*
@@ -447,12 +459,25 @@ bool SubArray::Read( NVMainRequest *request )
     busReq->type = BUS_WRITE;
     busReq->owner = this;
 
-    GetEventQueue( )->InsertEvent( EventResponse, this, busReq, 
+    if(useTagCache)
+    {
+        GetEventQueue( )->InsertEvent( EventResponse, this, busReq, 
+            GetEventQueue()->GetCurrentCycle() + p->tCAS + decLat + dramTagLatency);
+
+        /* Notify owner of read completion as well */
+        GetEventQueue( )->InsertEvent( EventResponse, this, request, 
+            GetEventQueue()->GetCurrentCycle() + p->tCAS + p->tBURST + dramTagLatency );
+    }
+    else
+    {
+        GetEventQueue( )->InsertEvent( EventResponse, this, busReq, 
             GetEventQueue()->GetCurrentCycle() + p->tCAS + decLat );
 
-    /* Notify owner of read completion as well */
-    GetEventQueue( )->InsertEvent( EventResponse, this, request, 
+        /* Notify owner of read completion as well */
+        GetEventQueue( )->InsertEvent( EventResponse, this, request, 
             GetEventQueue()->GetCurrentCycle() + p->tCAS + p->tBURST + decLat );
+    }
+
 
 
     /* Calculate energy */
@@ -605,7 +630,7 @@ bool SubArray::Write( NVMainRequest *request )
     {
         nextActivate = MAX( nextActivate, 
                             GetEventQueue()->GetCurrentCycle()
-                            + MAX( p->tBURST, p->tCCD ) * (request->burstCount - 1)
+                            + MAX( p->tBURST, p->tCCD_L ) * (request->burstCount - 1)
                             + p->tAL + p->tCWD + p->tBURST 
                             + writeTimer + p->tWR + p->tRP );
 
@@ -621,24 +646,24 @@ bool SubArray::Write( NVMainRequest *request )
         /* insert the event to issue the implicit precharge */ 
         GetEventQueue( )->InsertEvent( EventResponse, this, preReq, 
             GetEventQueue()->GetCurrentCycle() 
-            + MAX( p->tBURST, p->tCCD ) * (request->burstCount - 1)
+            + MAX( p->tBURST, p->tCCD_L ) * (request->burstCount - 1)
             + p->tAL + p->tCWD + p->tBURST + writeTimer + p->tWR );
     }
     else
     {
         nextPrecharge = MAX( nextPrecharge, 
                              GetEventQueue()->GetCurrentCycle() 
-                             + MAX( p->tBURST, p->tCCD ) * (request->burstCount - 1)
+                             + MAX( p->tBURST, p->tCCD_L ) * (request->burstCount - 1)
                              + p->tAL + p->tCWD + p->tBURST + writeTimer + p->tWR );
 
         nextRead = MAX( nextRead, 
                         GetEventQueue()->GetCurrentCycle() 
-                        + MAX( p->tBURST, p->tCCD ) * (request->burstCount - 1)
-                        + p->tCWD + p->tBURST + p->tWTR + writeTimer );
+                        + MAX( p->tBURST, p->tCCD_L ) * (request->burstCount - 1)
+                        + p->tCWD + p->tBURST + p->tWTR_L + writeTimer );
 
         nextWrite = MAX( nextWrite, 
                          GetEventQueue()->GetCurrentCycle() 
-                         + MAX( p->tBURST, p->tCCD ) * request->burstCount + writeTimer );
+                         + MAX( p->tBURST, p->tCCD_L ) * request->burstCount + writeTimer );
     }
 
     nextPowerDown = MAX( nextPowerDown, nextPrecharge );
@@ -650,7 +675,7 @@ bool SubArray::Write( NVMainRequest *request )
     writeStart = GetEventQueue()->GetCurrentCycle();
     writeEnd = GetEventQueue()->GetCurrentCycle() + writeTimer;
     writeEventTime = GetEventQueue()->GetCurrentCycle() + p->tCWD 
-                     + MAX( p->tBURST, p->tCCD ) * request->burstCount + writeTimer;
+                     + MAX( p->tBURST, p->tCCD_L ) * request->burstCount + writeTimer;
 
     /* The parent has our hook in the children list, we need to find this. */
     std::vector<NVMObject_hook *>& children = GetParent( )->GetTrampoline( )->GetChildren( );
@@ -682,8 +707,16 @@ bool SubArray::Write( NVMainRequest *request )
     GetEventQueue( )->InsertEvent( EventResponse, this, busReq, 
             GetEventQueue()->GetCurrentCycle() + p->tCWD );
 
-    /* Notify owner of write completion as well */
-    GetEventQueue( )->InsertEvent( writeEvent, writeEventTime );
+    if(useTagCache)
+    {
+        /* Notify owner of write completion as well */
+        GetEventQueue( )->InsertEvent( writeEvent, writeEventTime + dramTagLatency );
+    }
+    else
+    {
+        /* Notify owner of write completion as well */
+        GetEventQueue( )->InsertEvent( writeEvent, writeEventTime );
+    }
 
     /* Calculate energy. */
     if( p->EnergyModel == "current" )

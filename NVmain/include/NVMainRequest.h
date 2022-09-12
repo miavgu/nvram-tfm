@@ -128,6 +128,11 @@ class NVMainRequest
         arrivalCycle = 0; 
         issueCycle = 0; 
         queueCycle = 0;
+        bankissueCycle = 0;
+        memreadstartCycle = 0;
+        memreadendCycle = 0;
+        memread_flag = 0;
+        drchit_flag = 0;
         completionCycle = 0; 
         isPrefetch = false; 
         programCounter = 0; 
@@ -135,6 +140,7 @@ class NVMainRequest
         writeProgress = 0;
         cancellations = 0;
         owner = NULL;
+        arrivalTick = 0;
     };
 
     ~NVMainRequest( )
@@ -153,16 +159,22 @@ class NVMainRequest
     void *reqInfo;                 //< User-defined info for request (frontend only)
     uint64_t flags;                //< Flags for NVMain (backend only)
     bool isPrefetch;               //< Whether request is a prefetch or not
+    uint64_t memread_flag;
     NVMAddress pfTrigger;          //< Address that triggered this prefetch
     uint64_t programCounter;       //< Program counter of CPU issuing request
     ncounter_t burstCount;         //< Number of bursts (used for variable-size requests.
     NVMObject *owner;              //< Pointer to the object that created this request
+    uint64_t arrivalTick;          //< GEM5 in which the GEM5 request arrived at the NVMainMemory simobject
 
     ncycle_t arrivalCycle;         //< When the request arrived at the memory controller
     ncycle_t queueCycle;           //< When the memory controller accepted (queued) the request
     ncycle_t issueCycle;           //< When the memory controller issued the request to the interconnect (dequeued)
     ncycle_t completionCycle;      //< When the request was sent back to the requestor
+    ncycle_t bankissueCycle;
+    ncycle_t memreadstartCycle;
+    ncycle_t memreadendCycle;
 
+    ncycle_t drchit_flag;
     ncycle_t writeProgress;        //< Number of cycles remaining for write request
     ncycle_t cancellations;        //< Number of times this request was cancelled
 
@@ -179,6 +191,8 @@ class NVMainRequest
         FLAG_FORCED = 32,               // This write can not be paused or cancelled
         FLAG_PRIORITY = 64,             // Request (or precursor) that takes priority over write
         FLAG_ISSUED = 128,              // Request has left the command queue
+        FLAG_EVICT = 256,               // This request is triggered by a TAG-CACHE eviction
+        FLAG_SKIP_TAG = 512,           // This request should not be used on stat counting
         FLAG_COUNT
     };
 
@@ -201,11 +215,17 @@ const NVMainRequest& NVMainRequest::operator=( const NVMainRequest& m )
     pfTrigger = m.pfTrigger;
     programCounter = m.programCounter;
     owner = m.owner;
+    memread_flag = m.memread_flag;
 
+    bankissueCycle = m.bankissueCycle;
     arrivalCycle = m.arrivalCycle;
     queueCycle = m.queueCycle;
     issueCycle = m.issueCycle;
+    memreadstartCycle = m.memreadstartCycle;
+    memreadendCycle = m.memreadendCycle;
     completionCycle = m.completionCycle;
+    drchit_flag = m.drchit_flag;
+    arrivalTick = m.arrivalTick;
 
     return *this; 
 }

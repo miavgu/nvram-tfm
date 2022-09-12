@@ -42,6 +42,10 @@
 #include "src/Prefetcher.h"
 #include "include/NVMainRequest.h"
 #include "traceWriter/GenericTraceWriter.h"
+#include <unordered_map>
+#include <vector>
+#include <deque>
+// #include <array>
 #include <queue>
 
 namespace NVM {
@@ -80,6 +84,8 @@ class NVMain : public NVMObject
 
     void EnqueuePendingMemoryRequests( NVMainRequest *request );
 
+    std::ofstream traceFile;
+
   private:
     Config *config;
     Config **channelConfig;
@@ -103,6 +109,125 @@ class NVMain : public NVMObject
 
     void PrintPreTrace( NVMainRequest *request );
     void GeneratePrefetches( NVMainRequest *request, std::vector<NVMAddress>& prefetchList );
+
+    // std::unordered_map<uint64_t,uint64_t> directMap;
+    std::unordered_map<uint64_t,uint64_t> inverseMap;
+    uint64_t tagLines;
+    
+    class RequestStub {
+      public:
+        uint64_t pAddr;
+        uint64_t targetAddr;
+        NVM::OpType type;
+        NVMDataBlock& data;
+
+        RequestStub(uint64_t _pAddr, uint64_t _targetAddr, NVM::OpType _type, NVMDataBlock& _data)
+        : pAddr(_pAddr), targetAddr(_targetAddr), type(_type), data(_data)
+        {
+          this->data = _data;
+        }
+    };
+
+    // std::vector<RequestStub> waitingDRAMWrite;
+    // uint8_t DRAMWriteSize = 0;
+
+    std::vector<NVMainRequest*> waitingDRAMRead;
+    int DRAMReadSize = 0;
+    std::vector<NVMainRequest*> waitingDRAMWrite;
+    int DRAMWriteSize = 0;
+    std::vector<NVMainRequest*> waitingNVRAMWrite;
+    int NVRAMWriteSize = 0;
+    std::vector<NVMainRequest*> declinedReq;
+    int DeclinedReqSize = 0;
+    uint64_t totalReqs, reqsHit, reqsMiss, notIssuableTag, tagReplacements;
+    uint64_t RDHit, RDMiss, WRHit, WRMiss;
+    uint64_t RD_Replc, RD_Clean, RD_Present;
+    uint64_t readsOps, readsNotDRAM;
+
+    bool useTagCache = false;
+    
+    uint64_t tmpAddr = 0;
+
+    std::unordered_map<uint64_t, uint64_t> NVWtoDRW;
+
+    class LRU {
+      public:
+        int size;                                 //Size variable
+        std::unordered_map<uint64_t, uint64_t> m; //Data storage
+        std::deque<uint64_t> dq;                  //Implement LRU logic
+
+        LRU(uint64_t capacity) {
+          m.clear();
+          dq.clear();
+          size = capacity;
+        }
+
+        inline bool has(uint64_t key)
+        {
+          return !(m.find(key) == m.end());
+        }
+
+        uint64_t get(uint64_t key, int *found)
+        {
+          if (m.find(key) == m.end()) //Not in cache
+          {
+            *found = 0;
+            return 0;
+          }
+
+          auto it = dq.begin();
+          while(*it != key)
+            it++;
+          
+          dq.erase(it);
+          dq.push_front(key);
+
+          *found = 1;
+          return m[key];
+        }
+
+        void put(uint64_t key, uint64_t value)
+        {
+          if (m.find(key) == m.end()) //Not in cache
+          {
+            if(size == dq.size())     //Cache is full, need to replace
+            {
+              uint64_t leastUsed = dq.back();
+              dq.pop_back();
+              m.erase(leastUsed);
+            }
+          }
+          else                        //Already present, need to delet the already present
+          {
+            auto it = dq.begin();
+            while(*it != key)
+              it++;
+
+            dq.erase(it);
+            m.erase(key);
+          }
+
+          //Add the pair
+          dq.push_front(key);
+          m[key] = value;
+        }
+
+        inline uint64_t removeLRU()
+        {
+          uint64_t leastUsed = dq.back();
+          dq.pop_back();
+          uint64_t freedAddr = m[leastUsed];
+          m.erase(leastUsed);
+          return freedAddr;
+        }
+
+        inline bool isFull()
+        {
+          return (size == dq.size());
+        }
+    };
+
+    LRU *replacementPolicy;
 };
 
 };

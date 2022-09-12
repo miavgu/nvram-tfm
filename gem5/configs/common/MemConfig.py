@@ -228,13 +228,15 @@ def config_mem(options, system):
                     mem_ctrl = m5.objects.SimpleMemory()
                 elif opt_mem_type == "QoSMemSinkInterface":
                     mem_ctrl = m5.objects.QoSMemSinkCtrl()
+                elif opt_mem_type == "NVMainMemory":
+                    mem_ctrl = dram_intf
                 else:
                     mem_ctrl = m5.objects.MemCtrl()
 
                 # Hookup the controller to the interface and add to the list
                 if opt_mem_type == "QoSMemSinkInterface":
                     mem_ctrl.interface = dram_intf
-                elif opt_mem_type != "SimpleMemory":
+                elif opt_mem_type != "SimpleMemory" and opt_mem_type != "NVMainMemory":
                     mem_ctrl.dram = dram_intf
 
                 mem_ctrls.append(mem_ctrl)

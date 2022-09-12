@@ -76,6 +76,7 @@ Params::Params( )
     Epdpf = 0.000000;
     Epdps = 0.000000;
     Voltage = 1.5;
+    decdelay = 0;
 
     /* 
      * Default to 30 ohms for read. This means 60 ohms for 
@@ -136,7 +137,8 @@ Params::Params( )
     tAL = 0;
     tBURST = 4;
     tCAS = 10;
-    tCCD = 4;
+    tCCD_S = 4;
+    tCCD_L = 7;
     tCMD = 1;
     tCWD = 7;
     tRAW = 20;
@@ -148,18 +150,35 @@ Params::Params( )
     tREFW = 42666667;
     tRFC = 107;
     tRP = 9;
-    tRRDR = 5;
+    tRRDR_S = 5;
+    tRRDR_L = 7;
     tRRDW = 5;
     tPPD = 0;
     tRTP = 5;
     tRTRS = 1;
     tWP = 0;
     tWR = 10;
-    tWTR = 5;
+    tWTR_L = 10;
+    tWTR_S = 3;
     tXP = 6;
     tXPDLL = 17;
     tXS = 5;
     tXSDLL = 512;
+
+    tRead2Read_diff_part = 8;
+    tRead2Write_diff_part = 8;
+    tWrite2Read_diff_part = 8;
+    tWrite2Write_diff_part = 31;
+
+    tRead2Read_diff_addr = 46;
+    tRead2Write_diff_addr = 79;
+    tWrite2Read_diff_addr = 496;
+    tWrite2Write_diff_addr = 496;
+
+    tRead2Read_same_addr = 46;
+    tRead2Write_same_addr = 79;
+    tWrite2Read_same_addr = 1562;
+    tWrite2Write_same_addr = 1562;
 
     tRDPDEN = 24;
     tWRPDEN = 19;
@@ -199,6 +218,8 @@ Params::Params( )
     pauseMode = PauseMode_Normal;
 
     DeadlockTimer = 10000000;
+
+    useTagCache = false;
 
     debugOn = false;
     debugClasses.clear();
@@ -253,10 +274,12 @@ ncycle_t Params::ConvertTiming( Config *conf, std::string param )
 /* This can be called whenever timings change. (Will not update the "next" vars) */
 void Params::SetParams( Config *c )
 {
+    c->GetBool( "TAGCACHE", useTagCache);
     c->GetValueUL( "BusWidth", BusWidth );
     c->GetValueUL( "DeviceWidth", DeviceWidth );
     c->GetValueUL( "CLK", CLK );
     c->GetValueUL( "RATE", RATE );
+    c->GetValueUL( "LogLevel", LogLevel );
     c->GetValueUL( "CPUFreq", CPUFreq );
 
     c->GetEnergy( "EIDD0", EIDD0 );
@@ -319,6 +342,7 @@ void Params::SetParams( Config *c )
     c->GetValueUL( "CHANNELS", CHANNELS );
     c->GetValueUL( "RANKS", RANKS );
     c->GetValueUL( "BANKS", BANKS );
+    c->GetValueUL( "BANKGROUPS", BANKGROUPS );
     c->GetValueUL( "RAW", RAW );
     c->GetValueUL( "MATHeight", MATHeight );
     c->GetValueUL( "RBSize", RBSize );
@@ -326,7 +350,8 @@ void Params::SetParams( Config *c )
     ConvertTiming( c, "tAL", tAL );
     ConvertTiming( c, "tBURST", tBURST );
     ConvertTiming( c, "tCAS", tCAS );
-    ConvertTiming( c, "tCCD", tCCD );
+    ConvertTiming( c, "tCCD_L", tCCD_L );
+    ConvertTiming( c, "tCCD_S", tCCD_S );
     ConvertTiming( c, "tCMD", tCMD );
     ConvertTiming( c, "tCWD", tCWD );
     ConvertTiming( c, "tRAW", tRAW );
@@ -338,19 +363,39 @@ void Params::SetParams( Config *c )
     ConvertTiming( c, "tREFW", tREFW );
     ConvertTiming( c, "tRFC", tRFC );
     ConvertTiming( c, "tRP", tRP );
-    ConvertTiming( c, "tRRDR", tRRDR );
+    ConvertTiming( c, "tRRDR_L", tRRDR_L );
+    ConvertTiming( c, "tRRDR_S", tRRDR_S );
     ConvertTiming( c, "tRRDW", tRRDW );
     ConvertTiming( c, "tPPD", tPPD );
     ConvertTiming( c, "tRTP", tRTP );
     ConvertTiming( c, "tRTRS", tRTRS );
     ConvertTiming( c, "tWP", tWP );
     ConvertTiming( c, "tWR", tWR );
-    ConvertTiming( c, "tWTR", tWTR );
+    ConvertTiming( c, "tWTR_L", tWTR_L );
+    ConvertTiming( c, "tWTR_S", tWTR_S );
     ConvertTiming( c, "tXP", tXP );
     ConvertTiming( c, "tXPDLL", tXPDLL );
     ConvertTiming( c, "tXS", tXS );
     ConvertTiming( c, "tXSDLL", tXSDLL );
 
+    ConvertTiming( c, "tRD2RD_diff_part", tRead2Read_diff_part);
+    ConvertTiming( c, "tRD2WR_diff_part", tRead2Write_diff_part);
+    ConvertTiming( c, "tWR2RD_diff_part", tWrite2Read_diff_part);
+    ConvertTiming( c, "tWR2WR_diff_part", tWrite2Write_diff_part);
+
+    ConvertTiming( c, "tRD2RD_diff_addr", tRead2Read_diff_addr);
+    ConvertTiming( c, "tRD2WR_diff_addr", tRead2Write_diff_addr);
+    ConvertTiming( c, "tWR2RD_diff_addr", tWrite2Read_diff_addr);
+    ConvertTiming( c, "tWR2WR_diff_addr", tWrite2Write_diff_addr);
+    
+    ConvertTiming( c, "tRD2RD_same_addr", tRead2Read_same_addr);
+    ConvertTiming( c, "tRD2WR_same_addr", tRead2Write_same_addr);
+    ConvertTiming( c, "tWR2RD_same_addr", tWrite2Read_same_addr);
+    ConvertTiming( c, "tWR2WR_same_addr", tWrite2Write_same_addr);
+
+    ConvertTiming( c, "tDQ_TURNAROUND", tDQ_TURNAROUND);
+
+    c->GetValueUL( "decdelay", decdelay);
     c->GetValueUL( "tRDPDEN", tRDPDEN );
     c->GetValueUL( "tWRPDEN", tWRPDEN );
     c->GetValueUL( "tWRAPDEN", tWRAPDEN );

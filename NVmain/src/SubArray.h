@@ -133,6 +133,8 @@ class SubArray : public NVMObject
     BulkCommand nextCommand;
     NVMainRequest lastOperation;
 
+    double cycle_ns;
+    bool useTagCache;
     ncycle_t lastActivate;
     ncycle_t nextActivate;
     ncycle_t nextPrecharge;
@@ -167,10 +169,12 @@ class SubArray : public NVMObject
     ncounter_t measuredPauses;
     double averagePausedRequestProgress;
     ncounter_t measuredProgresses;
+    ncycle_t dramTagLatency;
 
     ncounter_t cancelledWrites;
     ncounter_t cancelledWriteTime;
     ncounter_t pausedWrites;
+    ncycle_t decdelay;
 
     ncounter_t actWaits;
     ncounter_t actWaitTotal;

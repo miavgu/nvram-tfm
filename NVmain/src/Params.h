@@ -130,14 +130,17 @@ class Params
     ncounter_t CHANNELS;
     ncounter_t RANKS;
     ncounter_t BANKS;
+    ncounter_t BANKGROUPS;
     ncounter_t RAW;
     ncounter_t MATHeight;
     ncounter_t RBSize;
+    ncounter_t LogLevel;
 
     ncycle_t tAL;
     ncycle_t tBURST;
     ncycle_t tCAS;
-    ncycle_t tCCD;
+    ncycle_t tCCD_L;
+    ncycle_t tCCD_S;
     ncycle_t tCMD;
     ncycle_t tCWD;
     ncycle_t tRAW;
@@ -149,18 +152,38 @@ class Params
     ncycle_t tREFW;
     ncycle_t tRFC;
     ncycle_t tRP;
-    ncycle_t tRRDR;
+    ncycle_t tRRDR_L;
+    ncycle_t tRRDR_S;
     ncycle_t tRRDW;
     ncycle_t tPPD;
     ncycle_t tRTP;
     ncycle_t tRTRS;
     ncycle_t tWP;
     ncycle_t tWR;
-    ncycle_t tWTR;
+    ncycle_t tWTR_L;
+    ncycle_t tWTR_S;
     ncycle_t tXP;
     ncycle_t tXPDLL;
     ncycle_t tXS;
     ncycle_t tXSDLL;
+    ncycle_t decdelay;
+
+    ncycle_t tRead2Read_diff_part;
+    ncycle_t tRead2Write_diff_part;
+    ncycle_t tWrite2Read_diff_part;
+    ncycle_t tWrite2Write_diff_part;
+
+    ncycle_t tRead2Read_diff_addr;
+    ncycle_t tRead2Write_diff_addr;
+    ncycle_t tWrite2Read_diff_addr;
+    ncycle_t tWrite2Write_diff_addr;
+    
+    ncycle_t tRead2Read_same_addr;
+    ncycle_t tRead2Write_same_addr;
+    ncycle_t tWrite2Read_same_addr;
+    ncycle_t tWrite2Write_same_addr;
+
+    ncycle_t tDQ_TURNAROUND;
 
     ncycle_t tRDPDEN; // interval between Read/ReadA and PowerDown
     ncycle_t tWRPDEN; // interval between Write and PowerDown
@@ -199,6 +222,8 @@ class Params
 
     /* Configurable deadlock timer. */
     ncycle_t DeadlockTimer;
+
+    bool useTagCache;
 
     /* List of debug classes. */
     bool debugOn;
